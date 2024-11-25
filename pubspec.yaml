@@ -47,6 +47,7 @@ dependencies:
   shelf_router: ^1.1.4
   file_picker: ^8.1.4
   charset_converter: ^2.3.0
+  permission_handler: ^11.3.1
 
 dev_dependencies:
   flutter_test:
