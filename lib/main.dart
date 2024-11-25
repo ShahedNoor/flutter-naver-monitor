@@ -95,10 +95,11 @@ class _NaverMonitorState extends State<NaverMonitor> {
             if (_evaluateCondition(condition, post)) {
               matchFound = true;
               final tag = conditionTagMap[condition];
-              _showNotification('Keyword Found!', '$tag\n${post.title}');
+              _showNotification(
+                  'Keyword Found!', '$tag\n${post.title}\n${post.description}');
+
               setState(() {
-                feedbackMessage =
-                    'Match found for condition: $condition\nTag: $tag\nPost Title: ${post.title}';
+                feedbackMessage = 'Match found for condition: $condition\nTag: $tag\nPost Title: ${post.title}\nPost Description: ${post.description}';
               });
               break; // Stop checking when a match is found
             }
