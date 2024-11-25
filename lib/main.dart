@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart'; // For file picker
 import 'package:excel/excel.dart'; // For parsing .xlsx files
 import 'dart:async'; // For timer
+import 'package:permission_handler/permission_handler.dart'; // **For permissions**
 
 void main() {
   runApp(const MyApp());
@@ -49,6 +50,7 @@ class _NaverMonitorState extends State<NaverMonitor> {
   void initState() {
     super.initState();
     _initializeNotifications();
+    requestPermission(); // Request notification permission** // **New change**
   }
 
   void _initializeNotifications() {
@@ -58,6 +60,14 @@ class _NaverMonitorState extends State<NaverMonitor> {
       android: androidInitializationSettings,
     );
     flutterLocalNotificationsPlugin.initialize(initializationSettings);
+  }
+
+  Future<void> requestPermission() async {
+    // **New change**
+    var status = await Permission.notification.status;
+    if (!status.isGranted) {
+      await Permission.notification.request();
+    }
   }
 
   Future<void> _fetchNaverNews() async {
@@ -96,10 +106,16 @@ class _NaverMonitorState extends State<NaverMonitor> {
               matchFound = true;
               final tag = conditionTagMap[condition];
               _showNotification(
+                  // **New change**
+                  'Keyword Found!',
+                  '$tag\n${post.title}\n${post.description}');
+
+              _showNotification(
                   'Keyword Found!', '$tag\n${post.title}\n${post.description}');
 
               setState(() {
-                feedbackMessage = 'Match found for condition: $condition\nTag: $tag\nPost Title: ${post.title}\nPost Description: ${post.description}';
+                feedbackMessage =
+                    'Match found for condition: $condition\nTag: $tag\nPost Title: ${post.title}\nPost Description: ${post.description}';
               });
               break; // Stop checking when a match is found
             }
@@ -169,18 +185,21 @@ class _NaverMonitorState extends State<NaverMonitor> {
 
   // Show local notification
   Future<void> _showNotification(String title, String body) async {
+    // **New change**
     const androidDetails = AndroidNotificationDetails(
-      'keyword_channel',
-      'Keyword Alerts',
-      importance: Importance.high,
+      'keyword_channel', // Channel ID
+      'Keyword Alerts', // Channel Name
+      importance:
+          Importance.high, // High importance to show in the notification bar
+      priority: Priority.high, // High priority for the notification
     );
     const notificationDetails = NotificationDetails(android: androidDetails);
 
     await flutterLocalNotificationsPlugin.show(
-      0,
-      title,
-      body,
-      notificationDetails,
+      0, // Notification ID
+      title, // Title of the notification
+      body, // Body of the notification
+      notificationDetails, // Notification details
     );
   }
 
