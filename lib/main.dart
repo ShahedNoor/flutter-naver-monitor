@@ -41,7 +41,7 @@ class _NaverMonitorState extends State<NaverMonitor> {
   List<Post> posts = []; // List to store fetched posts
   bool isLoading = false;
   bool isChecking = false; // To indicate if checking is ongoing
-  List<String> keywordsFromExcel = []; // List to store keywords from Excel
+  Map<String, String> conditionTagMap = {}; // Map to store conditions and tags
   String feedbackMessage = ''; // For showing feedback message
   late Timer _timer; // Timer to refresh every 2-3 seconds
 
@@ -79,7 +79,7 @@ class _NaverMonitorState extends State<NaverMonitor> {
             await CharsetConverter.decode("EUC-KR", response.bodyBytes);
 
         final document = parse(decodedBody);
-        final items = document.querySelectorAll('ul.type06 li');
+        final items = document.querySelectorAll('ul.type06 li, ul.type07 li');
 
         final List<Post> fetchedPosts = items.map((item) {
           final title = item.querySelector('dt > a')?.text.trim() ?? '';
@@ -89,17 +89,16 @@ class _NaverMonitorState extends State<NaverMonitor> {
 
         bool matchFound = false;
 
-        // Compare with keywords from the Excel file
+        // Compare with conditions from the Excel file
         for (var post in fetchedPosts) {
-          for (var keyword in keywordsFromExcel) {
-            if (post.title.contains(keyword) ||
-                post.description.contains(keyword)) {
+          for (var condition in conditionTagMap.keys) {
+            if (_evaluateCondition(condition, post)) {
               matchFound = true;
-              _showNotification(
-                  'Keyword Found!', '${post.title}\n${post.description}');
+              final tag = conditionTagMap[condition];
+              _showNotification('Keyword Found!', '$tag\n${post.title}');
               setState(() {
                 feedbackMessage =
-                    'Match found: ${post.title}\n${post.description}';
+                    'Match found for condition: $condition\nTag: $tag\nPost Title: ${post.title}';
               });
               break; // Stop checking when a match is found
             }
@@ -126,6 +125,44 @@ class _NaverMonitorState extends State<NaverMonitor> {
       setState(() {
         isLoading = false;
       });
+    }
+  }
+
+  bool _evaluateCondition(String condition, Post post) {
+    try {
+      final logicPattern = RegExp(r'\b(AND|OR|[\(\)])\b');
+      final tokens =
+          condition.split(logicPattern).map((e) => e.trim()).toList();
+
+      bool result = false;
+      String operation = "OR"; // Default operation
+
+      for (var token in tokens) {
+        if (token.isEmpty) continue;
+        if (token == 'AND' || token == 'OR') {
+          operation = token;
+        } else if (token.startsWith('(') && token.endsWith(')')) {
+          final nested = token.substring(1, token.length - 1);
+          final nestedResult = _evaluateCondition(nested, post);
+          result = _applyLogic(result, nestedResult, operation);
+        } else {
+          final containsToken =
+              post.title.contains(token) || post.description.contains(token);
+          result = _applyLogic(result, containsToken, operation);
+        }
+      }
+      return result;
+    } catch (e) {
+      print("Error evaluating condition: $condition");
+      return false;
+    }
+  }
+
+  bool _applyLogic(bool current, bool next, String operation) {
+    if (operation == 'AND') {
+      return current && next;
+    } else {
+      return current || next; // Default OR logic
     }
   }
 
@@ -159,16 +196,18 @@ class _NaverMonitorState extends State<NaverMonitor> {
         final bytes = await File(path).readAsBytes();
         var excel = Excel.decodeBytes(bytes);
         var sheet = excel.tables['Sheet1'];
-        List<String> keywords = [];
+        Map<String, String> conditionMap = {};
         for (var row in sheet?.rows ?? []) {
-          for (var cell in row) {
-            if (cell != null && cell is String) {
-              keywords.add(cell);
+          if (row.length >= 2) {
+            final condition = row[0]?.value.toString().trim();
+            final tag = row[1]?.value.toString().trim();
+            if (condition != null && tag != null) {
+              conditionMap[condition] = tag;
             }
           }
         }
         setState(() {
-          keywordsFromExcel = keywords; // Store keywords from Excel
+          conditionTagMap = conditionMap; // Store condition-tag mapping
         });
       }
     }
@@ -179,7 +218,7 @@ class _NaverMonitorState extends State<NaverMonitor> {
     setState(() {
       isChecking = true;
     });
-    // Start a timer that triggers every 2 seconds
+    // Start a timer that triggers every 3 seconds
     _timer = Timer.periodic(const Duration(seconds: 3), (timer) {
       if (isChecking) {
         _fetchNaverNews();
@@ -226,7 +265,7 @@ class _NaverMonitorState extends State<NaverMonitor> {
                   onPressed: isChecking ? _stopChecking : _startChecking,
                   child: Text(isChecking ? 'Stop Checking' : 'Start Checking'),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 5),
               ],
             ),
           ),
@@ -251,25 +290,16 @@ class PostsListView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return posts.isEmpty
-        ? const Center(
-            child: Padding(
-            padding: EdgeInsets.all(16.0),
-            child: Text(
-              'No posts found. Select excel file and click start checking to load.',
-              textAlign: TextAlign.center,
-            ),
-          ))
-        : ListView.builder(
-            itemCount: posts.length,
-            itemBuilder: (context, index) {
-              final post = posts[index];
-              return ListTile(
-                title: SelectableText(post.title),
-                subtitle: SelectableText(post.description),
-              );
-            },
-          );
+    return ListView.builder(
+      itemCount: posts.length,
+      itemBuilder: (context, index) {
+        final post = posts[index];
+        return ListTile(
+          title: Text(post.title),
+          subtitle: Text(post.description),
+        );
+      },
+    );
   }
 }
 
@@ -280,30 +310,20 @@ class BottomFeedbackSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: Container(
-        decoration: const BoxDecoration(
-          color: Colors.blue,
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(20),
-            topRight: Radius.circular(20),
-          ),
+    print(feedbackMessage);
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey.withOpacity(0.2),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
         ),
-        width: double.infinity,
-        height: 120,
-        padding: const EdgeInsets.all(8.0),
-        child: SingleChildScrollView(
-          child: Text(
-            feedbackMessage,
-            style: const TextStyle(
-              fontSize: 16,
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ),
+      ),
+      padding: const EdgeInsets.all(16.0),
+      child: Text(
+        feedbackMessage,
+        style: const TextStyle(fontSize: 16.0),
+        textAlign: TextAlign.center,
       ),
     );
   }
